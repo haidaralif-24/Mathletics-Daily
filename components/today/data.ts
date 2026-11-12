@@ -1,3 +1,4 @@
+import { connection } from 'next/server';
 import { closesAtFor, releaseAtFor } from '@/lib/time';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -87,6 +88,16 @@ export type TodayData =
 
 export async function loadToday(userId: string | null): Promise<TodayData> {
   const supabase = await createServerSupabaseClient();
+
+  // `cacheComponents` is on, so reading the clock has to be marked as
+  // request-time work: without this, `new Date()` trips Next's unstable-value
+  // guard during the prerender pass and the whole page fails to render
+  // (the build did NOT catch this — only a real request does).
+  //
+  // This timestamp is only for correcting the countdown display (S-4). Whether
+  // the question is actually open is decided by Postgres below, with
+  // `release_at <= now()` and `closes_at > now()` (hard rule 3).
+  await connection();
   const serverNowIso = new Date().toISOString();
 
   // One wave: the open question, the latest released one (for the closed state),

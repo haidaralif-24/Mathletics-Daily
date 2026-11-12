@@ -5,10 +5,37 @@ Most acceptance criteria are security criteria, so the **RLS isolation suite com
 | Layer | Tool | Command | Covers |
 | --- | --- | --- | --- |
 | Unit | Vitest | `pnpm test` | `lib/scoring.ts`, `lib/time.ts`, `lib/answers.ts` |
-| Database / RLS | pgTAP in `supabase/tests` | `pnpm db:test` | Every policy and function (checklist in `docs/SECURITY.md`) |
+| Database / RLS | pgTAP in `supabase/tests` | `pnpm db:verify` (reset + test) | Every policy and function (checklist in `docs/SECURITY.md`) |
 | End to end | Playwright | `pnpm e2e` | Login -> submit -> admin grades -> leaderboard |
 | Performance / a11y | Lighthouse (mobile) | manual on a preview | Today's question: Performance >= 85, Accessibility >= 90 |
 | Manual | Real devices | see below | Photo upload, small screens |
+
+## Run the RLS suite on a CLEAN database — always
+
+```bash
+pnpm db:verify      # supabase db reset && supabase test db
+```
+
+`pnpm db:test` alone is only correct on a database that has just been reset.
+The suite builds its own fixtures and asserts exact row counts, so it assumes
+empty tables. Run it against a **seeded** database and you get spurious failures
+that look like real bugs:
+
+- `duplicate key value violates unique constraint "questions_release_date_key"` —
+  the suite inserts a question on today's WIB date, which is also what
+  `scripts/seed.ts` creates, so the two collide.
+- `have: 14 want: 7` profiles, `have: 3 want: 1` admins — the seed adds 7 users.
+
+None of that means the policies are broken. It fails loudly rather than passing
+vacuously, which is the safe direction, but do not go bug-hunting: reset first.
+Seed afterwards if you want a database to click around in.
+
+Verified figures on a clean database: **Files=7, Tests=254, PASS**.
+
+The suite is worth trusting because it was mutation-tested: disabling RLS on
+`submissions` (`alter table public.submissions disable row level security;`)
+makes 7 assertions fail across `01_questions.sql` and `02_submissions.sql`. A
+suite that still passes with RLS off would be proving nothing.
 
 ## RLS suite (write before the UI)
 Four actors: anon (guest), member A, member B, admin. Cover every item in the checklist in `docs/SECURITY.md`. Add a test whenever a table, policy or function changes. A policy without a test is not done.

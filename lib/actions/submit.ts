@@ -11,12 +11,20 @@ import { submitAnswerSchema } from '@/lib/validation';
 /**
  * M-1..M-5: the only way a member writes a submission. Members have no write
  * policy on any table, so the row is written by `submit_answer` (security
- * definer). Identity comes from `auth.uid()` inside that function — never from
- * a parameter.
+ * definer).
+ *
+ * That function is granted to `service_role` ONLY — a member cannot call it
+ * from the browser (docs/DECISIONS.md 30). This matters because the verdict it
+ * stores pre-fills the grader's Correct/Wrong toggle (R-2) and the grader
+ * accepts that with one keystroke (R-4), so a verdict a member could set would
+ * be a route to unearned points.
+ *
+ * `p_user_id` is therefore taken from the verified session via `requireUser()`
+ * and never from the request body. The function still enforces the window, the
+ * account state, the final-answer lock and the photo-path prefix in SQL.
  *
  * The answer key is read here, on the server, with the service role. Only the
- * resulting verdict is passed on (as `p_auto_verdict`); the key never reaches
- * the browser (G-3, M-7).
+ * resulting verdict is passed on; the key never reaches the browser (G-3, M-7).
  */
 
 export interface SubmitAnswerData {
@@ -52,7 +60,12 @@ export async function submitAnswer(input: unknown): Promise<ActionResult<SubmitA
 
   const verdict = await autoVerdict(questionId, finalAnswer);
 
-  const { data: submissionId, error } = await supabase.rpc('submit_answer', {
+  // Service role: `submit_answer` is not executable by `authenticated`
+  // (docs/DECISIONS.md 30). `user.id` is the verified session subject, so a
+  // caller cannot write a submission into someone else's row.
+  const admin = createSupabaseAdminClient();
+  const { data: submissionId, error } = await admin.rpc('submit_answer', {
+    p_user_id: user.id,
     p_question_id: questionId,
     p_final_answer: finalAnswer,
     p_steps_text: stepsText,

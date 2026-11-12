@@ -192,7 +192,7 @@ isOneToOne: false
             }[]
                            },
 "submit_answer":
-{ Args: { "p_auto_verdict"?: string,"p_final_answer": string,"p_photo_paths": (string)[],"p_question_id": string,"p_steps_text": string }; Returns: string
+{ Args: { "p_auto_verdict"?: string,"p_final_answer": string,"p_photo_paths": (string)[],"p_question_id": string,"p_steps_text": string,"p_user_id": string }; Returns: string
                            }
           }
           Enums: {
