@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from './types';
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from './env';
 
 /**
@@ -7,7 +8,7 @@ import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from './env';
  * other members' data. Guard with requireAdmin()/requireUser() BEFORE using it.
  */
 export function createSupabaseAdminClient() {
-  return createClient(SUPABASE_URL(), SUPABASE_SERVICE_ROLE_KEY(), {
+  return createClient<Database>(SUPABASE_URL(), SUPABASE_SERVICE_ROLE_KEY(), {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
