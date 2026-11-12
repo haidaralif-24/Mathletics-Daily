@@ -28,9 +28,11 @@
       the real PostgREST/Storage HTTP path with two live sessions.
 - [ ] `auth.signUp` rejection is not SQL-testable; it rests on `enable_signup =
       false` being set in both hosted projects (docs/RUNBOOK.md step 3).
-- [ ] SPEC section 6 "wrong key published" has no re-run mechanism: fixing a key
-      does not recompute `auto_verdict`, so an admin must re-confirm verdicts by
-      hand. Deliberately cut, not forgotten.
+- [x] SPEC section 6 "wrong key published": `recheckQuestionVerdicts` recomputes
+      every verdict against the corrected key and flags affected grades
+      `needs_regrade`. Button on the question editor, not the grading screen.
+      Verified end to end: a wrong key flipped 4 of 5 verdicts, fixing it flipped
+      3 back, a no-op re-run changed 0, and points never moved on their own.
 
 Legend: `[x]` done and verified · `[~]` in progress · `[ ]` not started
 

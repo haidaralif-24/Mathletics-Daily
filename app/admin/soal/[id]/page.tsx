@@ -12,6 +12,7 @@ import {
   toQuestionFormValues,
 } from '../payload';
 import { QuestionForm } from '../question-form';
+import { RecheckButton } from './recheck-button';
 import { getQuestionForEdit } from '../data';
 
 export const metadata: Metadata = {
@@ -74,6 +75,17 @@ async function EditQuestionScreen({ params }: { params: Promise<{ id: string }> 
         submissionCount={record.submissionCount}
         initialImageUrl={record.imageUrl}
       />
+
+      {/* SPEC section 6: "Wrong key published -> fix the key; re-run the
+          auto-check". Only useful once members have submitted. */}
+      <div className="flex flex-col gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+        <h2 className="font-heading text-sm font-semibold">Kunci sudah diperbaiki?</h2>
+        <p className="text-xs text-muted-foreground">
+          Tebakan otomatis dihitung sekali saat kiriman masuk, jadi kunci yang diperbaiki belakangan tidak
+          otomatis memperbaruinya. Jalankan ini setelah menyimpan kunci yang benar.
+        </p>
+        <RecheckButton questionId={record.id} submissionCount={record.submissionCount} />
+      </div>
     </div>
   );
 }

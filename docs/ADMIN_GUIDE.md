@@ -51,6 +51,15 @@ Papan peringkat diperbarui setelah soal dinilai, bukan saat dikirim. Admin tidak
 
 Setiap anggota memakai kata sandi sementara sekali pakai dan wajib menggantinya saat login pertama.
 
+## Kalau kunci jawaban ternyata salah
+Tebakan otomatis dihitung **sekali**, saat kiriman masuk, lalu disimpan. Jadi memperbaiki kunci belakangan tidak otomatis memperbarui tebakan yang sudah tersimpan.
+
+1. Buka **Soal**, perbaiki kuncinya, simpan.
+2. Di halaman soal yang sama, tekan **"Hitung ulang tebakan otomatis"**.
+3. Buka **Koreksi**. Kiriman yang tebakannya berubah sekarang bertanda **perlu dinilai ulang**. Periksa dan simpan ulang nilainya.
+
+Poin tidak pernah berubah sendiri — hanya kamu yang mengubahnya saat menyimpan nilai. Ini disengaja: anggota sudah menerima nilainya, jadi perubahan harus lewat keputusan admin.
+
 ## Kalau ada masalah
 | Gejala | Yang dilakukan |
 | --- | --- |
@@ -59,7 +68,7 @@ Setiap anggota memakai kata sandi sementara sekali pakai dan wajib menggantinya 
 | Anggota bilang jawabannya terkunci padahal salah ketik | Jawaban akhir memang tidak bisa diubah setelah kiriman pertama. Ini aturan, bukan bug. Nilai saja seadanya dan beri catatan |
 | Foto gagal diunggah | Minta anggota coba lagi dengan koneksi lebih baik. Berkas yang gagal tidak menyimpan kiriman setengah jadi |
 | Poin di papan peringkat terasa salah | Buka kirimannya di Koreksi dan simpan ulang nilainya. Total dihitung ulang otomatis |
-| Kunci jawaban salah | Perbaiki di Soal, lalu **nilai ulang kiriman yang terdampak secara manual** — tebakan otomatis tidak dihitung ulang sendiri |
+| Kunci jawaban salah | Perbaiki kuncinya di **Soal**, simpan, lalu tekan **"Hitung ulang tebakan otomatis"** di halaman soal itu. Tebakan Benar/Salah dihitung ulang, dan nilai yang terpengaruh ditandai **perlu dinilai ulang**. Poin **tidak** berubah sendiri — kamu tetap harus membuka Koreksi dan menyimpan ulang nilainya |
 
 ## Belum ada di versi ini
 Jangan dicari dulu; ini rencana berikutnya:
