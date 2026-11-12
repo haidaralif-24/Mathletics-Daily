@@ -132,6 +132,7 @@ Store dumps outside the repo. Photos live in Storage; copy them separately if th
 | Wrong answer key published | Fix the key, re-run the auto-check, have an admin re-confirm affected grades |
 | Wrong points on the leaderboard | Re-save the affected grades (totals are recomputed); check `lib/config.ts` was not changed mid-period |
 | Bad deploy | Roll back to the previous deployment in Vercel; database migrations need a new corrective migration |
+| Every route throws `Next.js encountered the unstable value Date.now() while prerendering` in `pnpm dev` | The dev server is running against a `.next` directory that a `next build` (or an older dev server) has written into. It is not a code bug: `pnpm build` passes and a clean dev server renders every route. Stop every dev server, `rm -rf .next`, then `pnpm dev`. Check with `lsof -ti:3000` — two PIDs there means two servers |
 
 ## After the exam
 Follow the deletion plan in `docs/PRIVACY.md`: export what the club wants to keep, then delete student data and photos.
