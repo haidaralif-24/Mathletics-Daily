@@ -6,11 +6,14 @@
 -- Schema reference: docs/DATA_MODEL.md · RLS rules: docs/SECURITY.md · points: docs/SCORING.md
 --
 -- Hard rules honoured here:
---   * RLS on every table; members are read-only on every table (writes go through `submit_answer`
---     or through server actions holding the service role key).
+--   * RLS on every table; client roles (`anon`, `authenticated`) are read-only on every table.
+--     Writes go through the service role: the `submit_answer` definer function for members, admin
+--     server actions for everything else. No client role can write any table directly.
 --   * Time decisions come from `now()` in the database (release_at / closes_at are generated).
 --   * Sensitive columns live in their own tables (question_keys, question_markschemes,
---     question_solutions), because RLS cannot restrict columns.
+--     question_solutions), because RLS cannot restrict columns. Where a column must stay hidden but
+--     the table is still read by a client role, the grant is per column instead (`submissions`
+--     without `auto_verdict`, M-7).
 --   * Every helper function is `security definer`, `stable`, `set search_path = ''` and fully
 --     schema-qualified, and EXECUTE is revoked from `public`/`anon` unless a client needs it.
 
@@ -181,7 +184,8 @@ $$;
 -- 3. Row level security
 --
 -- Model (docs/SECURITY.md): every table is read-only for client roles. Reads are granted where a
--- screen needs them; all writes happen through `submit_answer` (members) or the service role
+-- screen needs them, per column when a column has to stay hidden (`submissions.auto_verdict`, M-7);
+-- all writes happen through `submit_answer` (members) or the service role
 -- (admins, in server actions). There is deliberately NO insert/update/delete policy for `anon` or
 -- `authenticated` on any table: an UPDATE also needs a SELECT policy, so admin writes could never
 -- be column-scoped through RLS anyway. Buckets and functions are the only client-side write paths.
@@ -284,14 +288,32 @@ grant usage on schema public to anon, authenticated, service_role;
 -- same grants, plus their own profile, own submissions and own (closed) grade.
 -- question_keys and question_markschemes get no SELECT grant for any client role at all.
 grant select on table public.questions, public.question_solutions to anon, authenticated;
-grant select on table public.profiles, public.app_settings, public.submissions, public.grades
+grant select on table public.profiles, public.app_settings, public.grades
   to authenticated;
 
+-- `submissions` is granted per COLUMN on purpose (M-7): RLS restricts rows, never columns, so a
+-- table-wide SELECT grant would let PostgREST hand a member their own `auto_verdict` while the
+-- question is still open — the pre-fill verdict of their locked answer, which is shareable with
+-- classmates who have not submitted yet. The table-wide revoke above is what makes the list below
+-- the members' entire SELECT surface on this table. `auto_verdict` is deliberately NOT in it: do
+-- not add it back. The grading screen reads it through the service role (lib/actions/grading.ts),
+-- and `anon` gets no grant here at all.
+grant select (
+  id, question_id, user_id, final_answer, steps_text,
+  step_photo_paths, first_submitted_at, created_at, updated_at
+) on table public.submissions to authenticated;
+
 -- ---------------------------------------------------------------------------------------------
--- 4. submit_answer: the only way a member writes a submission (M-1..M-5, S-1, A-5)
+-- 4. submit_answer: the only path that writes a submission (M-1..M-5, S-1, A-5)
+--
+-- Callable by the SERVICE ROLE ONLY. `p_user_id` is supplied by the server action from the verified
+-- session, and `p_auto_verdict` is computed there by the single answer normaliser (`lib/answers.ts`),
+-- never by the browser: the verdict pre-fills `grades.is_correct` in the admin screen, so a
+-- member-supplied value would be a points forgery (SPEC R-2, DECISIONS 23 and 30).
 -- ---------------------------------------------------------------------------------------------
 
 create function public.submit_answer(
+  p_user_id uuid,
   p_question_id uuid,
   p_final_answer text,
   p_steps_text text,
@@ -304,8 +326,8 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_uid uuid := (select auth.uid());
   v_active boolean;
+  v_role text;
   v_question public.questions%rowtype;
   v_answer text := btrim(coalesce(p_final_answer, ''));
   v_steps text := nullif(btrim(coalesce(p_steps_text, '')), '');
@@ -315,12 +337,14 @@ declare
   v_id uuid;
   v_path text;
 begin
-  -- Identity always comes from the JWT, never from a parameter.
-  if v_uid is null then
+  -- Identity is passed in explicitly by the trusted server path (service role only, see section 7).
+  if p_user_id is null then
     raise exception 'Anda harus masuk untuk mengirim jawaban';
   end if;
 
-  select p.active into v_active from public.profiles p where p.id = v_uid;
+  -- The target profile, and with it the admin check below: the caller is the service role, so the
+  -- role to inspect is the submitting user's, not the caller's.
+  select p.active, p.role into v_active, v_role from public.profiles p where p.id = p_user_id;
   if v_active is null then
     raise exception 'Profil tidak ditemukan';
   end if;
@@ -330,7 +354,7 @@ begin
 
   -- Admins never submit (SPEC section 3: "Submit steps and photos" is No for admins). Checked
   -- before the window so the failure is unambiguous, and before any row is touched.
-  if public.is_admin() then
+  if v_role = 'admin' then
     raise exception 'Admin tidak mengirim jawaban';
   end if;
 
@@ -363,15 +387,16 @@ begin
     raise exception 'Maksimal 5 foto langkah pengerjaan';
   end if;
 
-  -- A photo path must live in the caller's own storage folder (defence in depth on top of the
-  -- storage.objects policies).
+  -- A photo path must live in the submitting user's own storage folder (defence in depth on top of
+  -- the storage.objects policies).
   foreach v_path in array v_photos loop
-    if v_path is null or not starts_with(v_path, v_uid::text || '/') then
+    if v_path is null or not starts_with(v_path, p_user_id::text || '/') then
       raise exception 'Lokasi foto tidak valid';
     end if;
   end loop;
 
-  -- Pre-fill for the admin only; unknown values become needs_review and never affect points.
+  -- Server-supplied pre-fill for the admin only; unknown values become needs_review. The value
+  -- pre-fills the grading screen (R-2), so it must never come straight from the browser.
   if v_verdict is not null and v_verdict not in ('correct', 'wrong', 'needs_review') then
     v_verdict := 'needs_review';
   end if;
@@ -379,7 +404,7 @@ begin
   select * into v_existing
   from public.submissions s
   where s.question_id = p_question_id
-    and s.user_id = v_uid
+    and s.user_id = p_user_id
   for update;
 
   if found then
@@ -399,7 +424,7 @@ begin
     )
     values (
       p_question_id,
-      v_uid,
+      p_user_id,
       v_answer,
       v_steps,
       v_photos,
@@ -418,7 +443,7 @@ begin
     select * into v_existing
     from public.submissions s
     where s.question_id = p_question_id
-      and s.user_id = v_uid
+      and s.user_id = p_user_id
     for update;
 
     if v_existing.final_answer is distinct from v_answer then
@@ -606,11 +631,16 @@ grant execute on function public.is_admin() to authenticated;
 grant execute on function public.is_active_member() to authenticated;
 grant execute on function public.get_osn_date() to authenticated;
 
--- Member write path and leaderboard: never reachable by guests.
-revoke execute on function public.submit_answer(uuid, text, text, text[], text) from public, anon;
+-- submit_answer is server-only: the member's own JWT must not be able to call it, because
+-- `p_auto_verdict` pre-fills `grades.is_correct` in the grading screen and a member-supplied
+-- "correct" would be a points forgery (DECISIONS 23, closed by 30).
+revoke execute on function public.submit_answer(uuid, uuid, text, text, text[], text)
+  from public, anon, authenticated;
+
+-- Leaderboard: signed-in members only, never guests.
 revoke execute on function public.leaderboard(text) from public, anon;
 
-grant execute on function public.submit_answer(uuid, text, text, text[], text) to authenticated;
+grant execute on function public.submit_answer(uuid, uuid, text, text, text[], text) to service_role;
 grant execute on function public.leaderboard(text) to authenticated;
 
 -- Trigger functions are not API surface.

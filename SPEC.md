@@ -60,7 +60,7 @@ A school-only web app for a math club. One problem per day, released 04:00 WIB, 
 - **M-3 [P0]** First submit sets `first_submitted_at` on the server and locks the final answer, after a confirmation: "Jawaban akhir tidak bisa diubah setelah dikirim. Lanjutkan?". Steps stay editable until close.
 - **M-4 [P0]** Submissions outside the window are rejected by the database with a clear message ("Soal ini sudah ditutup").
 - **M-5 [P0]** Atomic save: if a photo upload fails, no half-saved submission exists; the member can retry.
-- **M-6 [P0]** Status chip: Belum dijawab, Terkirim (HH:MM WIB), Sudah dinilai.
+- **M-6 [P0]** Status chip: Belum dijawab, Terkirim (HH.MM WIB), Sudah dinilai.
 - **M-7 [P0]** Verdict, points and feedback stay hidden until the question has closed and been graded.
 - **M-8 [P0]** Leaving the page with unsaved changes asks for confirmation. The submit button is disabled while processing; photo upload shows progress.
 

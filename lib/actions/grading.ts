@@ -4,7 +4,6 @@ import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth';
 import { computeGrade } from '@/lib/scoring';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { closesAtFor, releaseAtFor } from '@/lib/time';
 import { saveGradeSchema, type SaveGradeInput } from '@/lib/validation';
 import type { Verdict } from '@/lib/answers';
@@ -56,7 +55,12 @@ export async function loadGradingRoster(questionId: string): Promise<ActionResul
   if (!parsed.success) return fromZodError(parsed.error);
   const id = parsed.data;
 
-  const supabase = await createServerSupabaseClient();
+  // Service role, not the admin's own session: `submissions` is granted to
+  // `authenticated` per COLUMN and `auto_verdict` is deliberately not one of
+  // them (M-7 — column grants are role-based, so admins are covered by that
+  // restriction too). Reading the verdict through the session client fails with
+  // 42501. Allowed here because `requireAdmin()` has already run.
+  const supabase = createSupabaseAdminClient();
 
   const [membersResult, submissionsResult] = await Promise.all([
     supabase

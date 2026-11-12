@@ -2,8 +2,11 @@
 --   "Storage: anon reads only released question-media; a member reads only their own
 --    submission-media and cannot upload into another member's folder, a non-image MIME, or an
 --    object over 8 MB"
--- plus: both buckets stay private, only two buckets exist, admin writes question-media, the admin
--- upload path is the service role, and RLS on storage.objects is enabled at all.
+-- plus: both buckets stay private, only two buckets exist, admin writes question-media (insert,
+-- update and delete — the last two with the storage API's delete guard turned off, because the
+-- statement trigger storage.protect_delete blocks every other direct DELETE), no member has a
+-- DELETE policy in either bucket, the admin upload path is the service role, and RLS on
+-- storage.objects is enabled at all.
 --
 -- Actors: admin 1111..., member A 2222..., member B 3333..., inactive 4444...
 -- Questions: q_open a0..01 (image open/diagram.png), q_closed a0..02 (closed/diagram.png),
@@ -12,7 +15,7 @@
 
 begin;
 set search_path = extensions, public;
-select plan(34);
+select plan(40);
 
 -- =============================================================================================
 -- Fixtures
@@ -179,6 +182,17 @@ select throws_ok($q$ delete from storage.objects
                  '42501', null,
                  'A tidak bisa menghapus objeknya sendiri (tidak ada policy delete, Storage yang mengurus)');
 
+-- The statement-level guard trigger (storage.protect_delete, ERRCODE 42501) is what stops direct
+-- SQL deletes; the storage API turns it off with `storage.allow_delete_query = 'true'` before it
+-- issues its own statements. With the guard off, only the DELETE policies are left — and a member
+-- has none, in either bucket. These two assertions pin the policies themselves.
+select set_config('storage.allow_delete_query', 'true', true);
+select is_empty($q$ delete from storage.objects
+                 where name = '22222222-2222-2222-2222-222222222222/langkah-1.jpg' returning 1 $q$,
+                'A tetap tidak bisa menghapus fotonya sendiri walau guard storage dimatikan');
+select is_empty($q$ delete from storage.objects where name = 'open/diagram.png' returning 1 $q$,
+                'A tidak bisa menghapus gambar soal, walau guard storage dimatikan');
+
 -- =============================================================================================
 -- Deactivated member: no upload at all
 -- =============================================================================================
@@ -227,6 +241,25 @@ select throws_ok($q$ insert into storage.objects (bucket_id, name, owner, metada
                             '{"mimetype":"image/jpeg","size":1000}'::jsonb) $q$,
                  '42501', 'new row violates row-level security policy for table "objects"',
                  'admin tidak menulis ke folder anggota dari browser');
+
+-- question_media_update_admin / question_media_delete_admin, exercised the way the storage API
+-- does it (the guard trigger from above has to be off).
+select set_config('storage.allow_delete_query', 'true', true);
+
+select lives_ok($q$ update storage.objects set metadata = '{"mimetype":"image/png","size":1500}'::jsonb
+                  where name = 'open/diagram.png' $q$,
+                'admin bisa memperbarui gambar soal yang sudah ada (upsert saat mengganti gambar)');
+reset role;
+select is((select metadata->>'size' from storage.objects where name = 'open/diagram.png'), '1500',
+          'perubahan metadata oleh admin benar-benar tersimpan, bukan hanya tidak error');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
+select lives_ok($q$ delete from storage.objects where name = 'open/diagram-baru.png' $q$,
+                'admin bisa menghapus gambar soal (policy question_media_delete_admin)');
+reset role;
+select is((select count(*) from storage.objects where name = 'open/diagram-baru.png'), 0::bigint,
+          'gambar soal yang dihapus admin benar-benar hilang');
 
 reset role;
 set local role service_role;

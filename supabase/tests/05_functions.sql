@@ -20,7 +20,7 @@
 
 begin;
 set search_path = extensions, public;
-select plan(44);
+select plan(45);
 
 -- =============================================================================================
 -- Fixtures
@@ -266,7 +266,8 @@ select is((select public.get_osn_date()), '2027-04-01'::date,
           'get_osn_date() juga bekerja untuk admin');
 
 -- =============================================================================================
--- submit_answer rejects admins (SPEC.md section 3: "Submit steps and photos" is No for admins)
+-- submit_answer is server-only and rejects admins
+--   (SPEC.md section 3: "Submit steps and photos" is No for admins)
 -- =============================================================================================
 reset role;
 
@@ -289,11 +290,23 @@ select is((select count(*) from public.questions
               and release_at <= now() and now() < closes_at), 1::bigint,
           'prasyarat fixture: soal uji sedang terbuka');
 
+-- No client role may call the function at all: that is what makes p_auto_verdict unforgeable.
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
 
 select throws_ok(
-  $q$ select public.submit_answer('a1000000-0000-0000-0000-000000000003', '6', 'langkah admin', null, null) $q$,
+  $q$ select public.submit_answer('22222222-2222-2222-2222-222222222222',
+                                  'a1000000-0000-0000-0000-000000000003', '6', 'langkah saya', null, 'correct') $q$,
+  '42501', 'permission denied for function submit_answer',
+  'anggota tidak bisa memanggil submit_answer langsung (tidak bisa memalsukan auto_verdict)');
+
+-- The trusted server path (service role) calls it with an explicit p_user_id.
+reset role;
+set local role service_role;
+
+select throws_ok(
+  $q$ select public.submit_answer('11111111-1111-1111-1111-111111111111',
+                                  'a1000000-0000-0000-0000-000000000003', '6', 'langkah admin', null, null) $q$,
   'P0001', 'Admin tidak mengirim jawaban',
   'admin tidak bisa memakai submit_answer, walaupun soalnya sedang terbuka');
 
@@ -303,13 +316,10 @@ select is_empty(
          and user_id = '11111111-1111-1111-1111-111111111111' $q$,
   'penolakan admin tidak menyisakan baris submission');
 
-reset role;
-set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
-
 select ok(
-  (select public.submit_answer('a1000000-0000-0000-0000-000000000003', '6', 'langkah saya', null, null)) is not null,
-  'anggota tetap bisa mengirim jawaban pada soal yang sama');
+  (select public.submit_answer('22222222-2222-2222-2222-222222222222',
+                               'a1000000-0000-0000-0000-000000000003', '6', 'langkah saya', null, null)) is not null,
+  'anggota tetap bisa mengirim jawaban pada soal yang sama lewat jalur server');
 
 select * from finish();
 rollback;
