@@ -24,6 +24,7 @@ values — the copy Vercel needs. See `docs/RUNBOOK.md` for the hosted setup.
 | `pnpm seed` | Create the admin(s) and the starter data. `SEED_PROFILE` picks how much: `starter` (default here), `demo`, `admins` |
 | `pnpm db:test` | Run the pgTAP tests in `supabase/tests` (RLS suite) |
 | `pnpm db:verify` | Reset the local database, then run the pgTAP suite. The suite assumes a clean database |
+| `pnpm db:push:remote` | Apply migrations to the hosted project. Needs `DBPW`; see `docs/RUNBOOK.md` step 4 |
 | `pnpm db:types` | Regenerate DB types from the local database |
 
 ## Supabase setup (checklist)

@@ -50,6 +50,17 @@ Set up once per project (staging first, then production):
    `db push` is deliberately NOT on the agent allow-list. Run it yourself.
    Confirm both buckets exist afterwards (Storage > `question-media`,
    `submission-media`, both private).
+
+   Without `supabase link` — or when the CLI cannot store its credentials —
+   use the wrapper, which takes the database password from the environment:
+   ```bash
+   DBPW='<database password>' pnpm db:push:remote   # applies supabase/migrations
+   DBPW='<database password>' pnpm db:check:remote  # lists the tables that now exist
+   ```
+   `scripts/remote-db.sh` also takes `sql "<query>"` and `url`. If the direct
+   host does not resolve (IPv6-only projects), override `DB_HOST` to the
+   session-mode pooler and `DB_USER` to `postgres.<project-ref>`; the header of
+   the script spells it out.
 5. **Set the Vercel env vars** — Preview gets staging values, Production gets
    production values:
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
