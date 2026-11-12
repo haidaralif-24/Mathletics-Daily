@@ -1,0 +1,11 @@
+-- 0001_init.sql
+-- TODO: implement from docs/DATA_MODEL.md. Order of work:
+--   1. tables: profiles, app_settings, questions, question_keys, question_markschemes,
+--      question_solutions, submissions, grades
+--   2. generated columns: questions.release_at / closes_at, grades.total_points
+--   3. enable RLS on EVERY table, then policies (docs/SECURITY.md)
+--   4. profiles: no member writes at all (name, class, role, active are admin-managed)
+--   5. functions: submit_answer(...), leaderboard(period), get_osn_date()
+--   6. triggers: submissions update -> grades.needs_regrade; auth.users insert -> profiles row (role = member)
+--   7. storage buckets: question-media, submission-media (private) + policies
+-- Add pgTAP / script tests under supabase/tests for every policy.
