@@ -5,9 +5,9 @@ import { cn } from '@/lib/utils';
 import { wibDateTime } from './wib';
 
 /**
- * S-3. Exactly one sentence when the next question is already scheduled —
- * "Soal berikutnya rilis {tanggal} pukul {jam} WIB" — and a friendly empty
- * state when nothing is scheduled at all.
+ * S-3. "Tidak ada soal untuk hari ini" is the headline whenever the Today page
+ * has nothing to work on, with the next release instant underneath when one is
+ * already scheduled, and a friendly empty state when nothing is scheduled.
  *
  * The next release instant is the one timestamp `loadToday` reads with the
  * service role: an unreleased question body stays unfetchable (S-5), but the
@@ -29,7 +29,7 @@ export function NoQuestionCard({
           ) : (
             <Sparkles className="size-4" aria-hidden="true" />
           )}
-          Belum ada soal yang bisa dikerjakan
+          Tidak ada soal untuk hari ini
         </CardTitle>
         <CardDescription>
           {nextReleaseAtIso
@@ -61,14 +61,17 @@ export function NoQuestionCard({
   );
 }
 
-/** S-3 while a closed question is still on screen: point at the next one. */
+/** S-3 while a closed question is still on screen: say today is empty, then point at the next one. */
 export function NextReleaseNote({ nextReleaseAtIso }: { nextReleaseAtIso: string | null }) {
   return (
     <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
       <CalendarDays className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-      {nextReleaseAtIso
-        ? `Soal berikutnya rilis ${wibDateTime(nextReleaseAtIso)}`
-        : 'Belum ada soal berikutnya yang terjadwal. Tunggu kabar dari admin klub, ya.'}
+      <span>
+        <span className="font-medium text-foreground">Tidak ada soal untuk hari ini.</span>{' '}
+        {nextReleaseAtIso
+          ? `Soal berikutnya rilis ${wibDateTime(nextReleaseAtIso)}.`
+          : 'Belum ada soal berikutnya yang terjadwal. Tunggu kabar dari admin klub, ya.'}
+      </span>
     </p>
   );
 }

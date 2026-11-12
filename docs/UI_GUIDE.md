@@ -51,7 +51,7 @@ Loading (skeleton), empty (friendly text and a next step), error (toast and an i
 | Submit success | Jawaban terkirim |
 | Before first submit | Jawaban akhir tidak bisa diubah setelah dikirim. Lanjutkan? |
 | Question closed | Soal ini sudah ditutup |
-| No active question | Soal berikutnya rilis {tanggal} pukul {jam} WIB |
+| No active question | Tidak ada soal untuk hari ini · Soal berikutnya rilis {tanggal} pukul {jam} WIB |
 | Guest, still open | Hasil tersedia setelah soal ditutup |
 | Login error | Email atau kata sandi salah |
 | Upload failed | Foto gagal diunggah. Coba lagi. |

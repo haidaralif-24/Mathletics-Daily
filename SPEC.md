@@ -42,7 +42,7 @@ A school-only web app for a math club. One problem per day, released 04:00 WIB, 
 ### Schedule and question display
 - **S-1 [P0]** A question releases at 04:00 WIB on its `release_date` and is open for 24 h. Nothing manual is needed to open or close it.
 - **S-2 [P0]** All times are shown in `Asia/Jakarta`, whatever the device timezone.
-- **S-3 [P0]** With no active question, show "Soal berikutnya rilis {tanggal} pukul {jam} WIB", or a friendly empty state when nothing is scheduled.
+- **S-3 [P0]** With no active question, say **"Tidak ada soal untuk hari ini"**, then "Soal berikutnya rilis {tanggal} pukul {jam} WIB" when one is scheduled, or a friendly empty state when nothing is scheduled.
 - **S-4 [P0]** Today's page shows title, release time, a countdown to close (corrected against server time on load) and the rendered question (LaTeX via KaTeX) with an optional diagram (zoomable).
 - **S-5 [P0]** An unreleased question cannot be fetched through the API, even from DevTools.
 - **S-6 [P1]** Header shows "H-xx" to the OSN selection date (admin setting). Hidden until the date is set.

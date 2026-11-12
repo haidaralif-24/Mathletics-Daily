@@ -15,27 +15,34 @@
 #
 # Overrides (rarely needed):
 #   PROJECT_REF   default sqxqukrjpccphjixgyhr
-#   DB_HOST       default db.$PROJECT_REF.supabase.co
-#   DB_USER       default postgres
-#   DB_PORT       default 5432
+#   DB_REGION     default ap-northeast-2 (Seoul — this project's region)
+#   DB_HOST       default aws-0.$DB_REGION.pooler.supabase.com
+#   DB_USER       default postgres.$PROJECT_REF  (the pooler needs the tenant in the user)
+#   DB_PORT       default 5432 (session mode; 6543 is transaction mode and
+#                 cannot run migrations)
 #
-# If the direct host does not resolve or times out, your project is IPv6-only on
-# that hostname. Use the session-mode pooler instead, which is IPv4:
+# The default is the POOLER, not db.$PROJECT_REF.supabase.co, on purpose: the
+# direct host resolves to an IPv6 address only, and most home/office networks
+# have no IPv6 route, so it just times out. The pooler is IPv4.
 #
-#   DB_HOST='aws-0-ap-southeast-1.pooler.supabase.com' \
-#   DB_USER="postgres.$PROJECT_REF" \
-#   DBPW='...' ./scripts/remote-db.sh push
+# For a direct connection instead, override both halves:
 #
-# The region in that hostname comes from Supabase dashboard > Project Settings >
-# Database > Connection pooling.
+#   DB_HOST="db.$PROJECT_REF.supabase.co" DB_USER=postgres \
+#   DBPW='...' ./scripts/remote-db.sh check
 #
 set -euo pipefail
 
 PROJECT_REF="${PROJECT_REF:-sqxqukrjpccphjixgyhr}"
-DB_HOST="${DB_HOST:-db.${PROJECT_REF}.supabase.co}"
-DB_USER="${DB_USER:-postgres}"
+DB_REGION="${DB_REGION:-ap-northeast-2}"
+DB_HOST="${DB_HOST:-aws-0-${DB_REGION}.pooler.supabase.com}"
+DB_USER="${DB_USER:-postgres.${PROJECT_REF}}"
 DB_PORT="${DB_PORT:-5432}"
 DB_NAME="${DB_NAME:-postgres}"
+
+if [[ -z "${DBPW:-}" ]]; then
+  # .env calls it SUPABASE_PASSWORD; accept either so `set -a; . ./.env` works.
+  DBPW="${SUPABASE_PASSWORD:-}"
+fi
 
 if [[ -z "${DBPW:-}" ]]; then
   echo "DBPW is not set. Run: DBPW='your-database-password' $0 ${1:-push}" >&2

@@ -57,10 +57,10 @@ Set up once per project (staging first, then production):
    DBPW='<database password>' pnpm db:push:remote   # applies supabase/migrations
    DBPW='<database password>' pnpm db:check:remote  # lists the tables that now exist
    ```
-   `scripts/remote-db.sh` also takes `sql "<query>"` and `url`. If the direct
-   host does not resolve (IPv6-only projects), override `DB_HOST` to the
-   session-mode pooler and `DB_USER` to `postgres.<project-ref>`; the header of
-   the script spells it out.
+   `scripts/remote-db.sh` also takes `sql "<query>"` and `url`. It defaults to the
+   session-mode pooler (`aws-0-ap-northeast-2.pooler.supabase.com`, user
+   `postgres.<project-ref>`) because the direct `db.<ref>` host is IPv6-only and
+   unreachable from most networks. If the project moves region, set `DB_REGION`.
 5. **Set the Vercel env vars** — Preview gets staging values, Production gets
    production values:
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
