@@ -50,7 +50,11 @@ export function LoginForm({ next }: { next: string }) {
   const formError = errors.root?.message;
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+    // method="post" is deliberate: without it, a submit that lands before React
+    // hydrates (or with JS off) is a native GET and puts the email AND the
+    // password in the URL, the browser history and the server access log.
+    // The app needs JS to sign in anyway, so a no-JS POST returning 405 is fine.
+    <form method="post" onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
       {formError ? (
         <p
           role="alert"
