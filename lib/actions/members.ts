@@ -4,8 +4,9 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { GENERIC_ERROR, fail, fromZodError, ok, type ActionResult } from '@/lib/actions/result';
 import { requireAdmin } from '@/lib/auth';
+import { parseRosterCsv } from '@/lib/csv';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { emailSchema, importMembersSchema, updateMemberSchema } from '@/lib/validation';
+import { importMembersSchema, updateMemberSchema } from '@/lib/validation';
 
 /**
  * U-1 / U-2 (SPEC section 4) — admin-only member management.
@@ -129,99 +130,6 @@ async function mapInBatches<T, R>(
   return results;
 }
 
-/* --------------------------------------------------------------- CSV parsing */
-
-interface CsvRecord {
-  /** 1-based record number as it appears in the file (header included). */
-  line: number;
-  cells: string[];
-}
-
-const HEADER_FIRST_CELLS = ['email', 'e-mail', 'surel'];
-
-/**
- * Minimal CSV reader: quoted fields, escaped quotes (`""`), CRLF and a BOM.
- * Commas, semicolons and tabs are all accepted as the separator so an
- * Excel-exported roster works as-is.
- */
-function parseCsv(text: string): CsvRecord[] {
-  const clean = text.replace(/^﻿/, '');
-  const firstLine = clean.split('\n', 1)[0] ?? '';
-  const delimiters = [',', ';', '\t'];
-  const delimiter = delimiters.reduce(
-    (best, candidate) =>
-      firstLine.split(candidate).length > firstLine.split(best).length ? candidate : best,
-    ',',
-  );
-
-  const records: CsvRecord[] = [];
-  let cells: string[] = [];
-  let field = '';
-  let inQuotes = false;
-  let recordNumber = 0;
-
-  const pushField = () => {
-    cells.push(field);
-    field = '';
-  };
-  const pushRecord = () => {
-    pushField();
-    recordNumber += 1;
-    // Blank lines are noise, not malformed rows: they are dropped silently.
-    if (cells.some((cell) => cell.trim().length > 0)) {
-      records.push({ line: recordNumber, cells });
-    }
-    cells = [];
-  };
-
-  for (let index = 0; index < clean.length; index += 1) {
-    const char = clean[index];
-
-    if (inQuotes) {
-      if (char === '"') {
-        if (clean[index + 1] === '"') {
-          field += '"';
-          index += 1;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += char;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      inQuotes = true;
-      continue;
-    }
-    if (char === delimiter) {
-      pushField();
-      continue;
-    }
-    if (char === '\n') {
-      pushRecord();
-      continue;
-    }
-    if (char === '\r') continue;
-    field += char;
-  }
-
-  if (field.length > 0 || cells.length > 0) pushRecord();
-
-  return records;
-}
-
-const rosterRowSchema = z.object({
-  email: emailSchema,
-  displayName: z
-    .string()
-    .trim()
-    .min(1, 'Nama wajib diisi.')
-    .max(120, 'Nama maksimal 120 karakter.'),
-  className: z.string().trim().max(40, 'Kelas maksimal 40 karakter.'),
-});
-
 const userIdSchema = z.object({ userId: z.uuid('Anggota tidak dikenal.') });
 const memberRoleSchema = z.object({
   userId: z.uuid('Anggota tidak dikenal.'),
@@ -237,6 +145,9 @@ const memberActiveSchema = z.object({
 /**
  * U-1: import a roster CSV (email, nama, kelas). Malformed or duplicate rows are
  * skipped and reported; they never abort the rest of the import (SPEC section 6).
+ *
+ * The text handling lives in `lib/csv.ts` so it is unit-testable; this action
+ * owns only the privileged half — looking accounts up and creating them.
  */
 export async function importMembers(input: { csv: string }): Promise<ActionResult<ImportReport>> {
   await requireAdmin();
@@ -244,62 +155,16 @@ export async function importMembers(input: { csv: string }): Promise<ActionResul
   const parsed = importMembersSchema.safeParse(input);
   if (!parsed.success) return fromZodError(parsed.error);
 
-  const records = parseCsv(parsed.data.csv);
-  if (records.length === 0) {
+  const { candidates: parsedCandidates, skipped } = parseRosterCsv(parsed.data.csv);
+  if (parsedCandidates.length === 0 && skipped.length === 0) {
     return fail('CSV tidak berisi baris data. Format tiap baris: email, nama, kelas.');
   }
 
-  const rows: RosterRowResult[] = [];
-  const seenEmails = new Set<string>();
-  const candidates: { line: number; email: string; displayName: string; className: string | null; temporaryPassword: string }[] = [];
-  let firstRecord = true;
-
-  for (const record of records) {
-    const email = (record.cells[0] ?? '').trim().toLowerCase();
-    const displayName = (record.cells[1] ?? '').trim();
-    const classNameRaw = (record.cells[2] ?? '').trim();
-
-    // The header line is not data; it is skipped quietly, even after blank lines.
-    if (firstRecord && HEADER_FIRST_CELLS.includes(email)) {
-      firstRecord = false;
-      continue;
-    }
-    firstRecord = false;
-
-    const row = rosterRowSchema.safeParse({ email, displayName, className: classNameRaw });
-    if (!row.success) {
-      rows.push({
-        line: record.line,
-        email,
-        displayName,
-        className: classNameRaw.length > 0 ? classNameRaw : null,
-        status: 'skipped',
-        reason: row.error.issues[0]?.message ?? 'Baris tidak lengkap. Format: email, nama, kelas.',
-      });
-      continue;
-    }
-
-    if (seenEmails.has(row.data.email)) {
-      rows.push({
-        line: record.line,
-        email: row.data.email,
-        displayName: row.data.displayName,
-        className: classNameRaw.length > 0 ? classNameRaw : null,
-        status: 'skipped',
-        reason: 'Email kembar di dalam CSV.',
-      });
-      continue;
-    }
-    seenEmails.add(row.data.email);
-
-    candidates.push({
-      line: record.line,
-      email: row.data.email,
-      displayName: row.data.displayName,
-      className: row.data.className.length > 0 ? row.data.className : null,
-      temporaryPassword: generateTemporaryPassword(),
-    });
-  }
+  const rows: RosterRowResult[] = skipped.map((row) => ({ ...row, status: 'skipped' as const }));
+  const candidates = parsedCandidates.map((row) => ({
+    ...row,
+    temporaryPassword: generateTemporaryPassword(),
+  }));
 
   if (candidates.length > MAX_IMPORT_ROWS) {
     return fail(`Maksimal ${MAX_IMPORT_ROWS} baris sekali impor. Bagi CSV-nya jadi beberapa bagian.`);
