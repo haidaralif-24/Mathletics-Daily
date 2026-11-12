@@ -13,6 +13,25 @@ Most acceptance criteria are security criteria, so the **RLS isolation suite com
 ## RLS suite (write before the UI)
 Four actors: anon (guest), member A, member B, admin. Cover every item in the checklist in `docs/SECURITY.md`. Add a test whenever a table, policy or function changes. A policy without a test is not done.
 
+Layout (`supabase/tests`, run in order, each file a transaction that rolls back):
+
+| File | Covers (docs/SECURITY.md checklist) |
+| --- | --- |
+| `01_questions.sql` | 1, 16 (read side) + structural guards: RLS on every table, no client write policy, no client grant on `question_keys`/`question_markschemes` |
+| `02_submissions.sql` | 3, 5, 7, 8, 9, 10, 11, 12, 14 + `submit_answer` privileges and `user_id = auth.uid()` |
+| `03_profiles.sql` | 2, 4, 19 |
+| `04_grades.sql` | 3 (feedback), 5 (grades), 13, 16 (grading) |
+| `05_functions.sql` | 6, 11 + the "Function privileges" table |
+| `06_storage.sql` | 17 |
+| `07_auth.sql` | 18 (DB side only), 19 |
+
+Rules that keep the suite honest:
+- The runner connects as `postgres`, a superuser with `BYPASSRLS`, so **every** assertion runs after an explicit `set local role anon|authenticated|service_role` plus `set_config('request.jwt.claims', ...)`. Fixtures are created before the first role switch (only superusers can insert into `auth.users`).
+- Assert `auth.uid()` is the expected uuid before trusting a "cannot read" result, otherwise a NULL uid makes denial tests pass for the wrong reason.
+- Fixture dates are derived from `now()` in `Asia/Jakarta` (open / closed / unreleased questions), so the suite passes at any hour. Questions whose window matters assert their own precondition.
+- Expect `42501` (`permission denied`) for `question_keys`/`question_markschemes` (no grant at all) and for client writes to public tables (grant revoked); RLS filters give empty results instead.
+- Checklist 18 (`auth.signUp` with the anon key) is an HTTP call to GoTrue, not SQL, so pgTAP cannot cover it. Verify it with the curl probe documented at the bottom of `07_auth.sql`; a stale auth container keeps serving the old config until it is recreated.
+
 ## Unit tests to keep green
 - Speed points: full at release, half at 12 h, zero at 24 h, never negative, rounded to 1 decimal.
 - Window: 04:00 WIB equals 21:00 UTC the day before; open at release, closed exactly at `closes_at`.

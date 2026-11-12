@@ -31,13 +31,16 @@ const MEMBER_ITEMS: NavItem[] = [
 ];
 
 const ADMIN_ITEMS: NavItem[] = [
+  { href: "/admin", label: "Dasbor" },
   { href: "/admin/soal", label: "Soal" },
   { href: "/admin/koreksi", label: "Koreksi" },
   { href: "/admin/member", label: "Member" },
 ];
 
 function isActive(pathname: string, href: string): boolean {
-  if (href === "/") return pathname === "/";
+  // "/" and "/admin" are index routes and must match exactly, otherwise
+  // "Dasbor" would light up on every /admin/* page as well.
+  if (href === "/" || href === "/admin") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
