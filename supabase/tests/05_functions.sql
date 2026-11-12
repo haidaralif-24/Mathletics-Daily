@@ -20,7 +20,7 @@
 
 begin;
 set search_path = extensions, public;
-select plan(40);
+select plan(44);
 
 -- =============================================================================================
 -- Fixtures
@@ -264,6 +264,52 @@ select is((select osn_date from public.app_settings), '2027-04-01'::date,
           'admin melihat tanggal OSN');
 select is((select public.get_osn_date()), '2027-04-01'::date,
           'get_osn_date() juga bekerja untuk admin');
+
+-- =============================================================================================
+-- submit_answer rejects admins (SPEC.md section 3: "Submit steps and photos" is No for admins)
+-- =============================================================================================
+reset role;
+
+-- An open question: today in WIB once 04:00 has passed, otherwise yesterday (so the window
+-- [release_at, closes_at) always contains now()).
+create temporary table fx_open on commit drop as
+select case
+         when (now() at time zone 'Asia/Jakarta')::time >= time '04:00'
+           then (now() at time zone 'Asia/Jakarta')::date
+         else (now() at time zone 'Asia/Jakarta')::date - 1
+       end as open_date;
+
+insert into public.questions (id, release_date, title, body_latex, created_by)
+select 'a1000000-0000-0000-0000-000000000003', fx.open_date, 'Soal terbuka', '3+3=?',
+       '11111111-1111-1111-1111-111111111111'
+from fx_open fx;
+
+select is((select count(*) from public.questions
+            where id = 'a1000000-0000-0000-0000-000000000003'
+              and release_at <= now() and now() < closes_at), 1::bigint,
+          'prasyarat fixture: soal uji sedang terbuka');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
+
+select throws_ok(
+  $q$ select public.submit_answer('a1000000-0000-0000-0000-000000000003', '6', 'langkah admin', null, null) $q$,
+  'P0001', 'Admin tidak mengirim jawaban',
+  'admin tidak bisa memakai submit_answer, walaupun soalnya sedang terbuka');
+
+select is_empty(
+  $q$ select 1 from public.submissions
+       where question_id = 'a1000000-0000-0000-0000-000000000003'
+         and user_id = '11111111-1111-1111-1111-111111111111' $q$,
+  'penolakan admin tidak menyisakan baris submission');
+
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
+
+select ok(
+  (select public.submit_answer('a1000000-0000-0000-0000-000000000003', '6', 'langkah saya', null, null)) is not null,
+  'anggota tetap bisa mengirim jawaban pada soal yang sama');
 
 select * from finish();
 rollback;

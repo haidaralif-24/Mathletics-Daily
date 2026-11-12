@@ -328,6 +328,12 @@ begin
     raise exception 'Akun Anda tidak aktif';
   end if;
 
+  -- Admins never submit (SPEC section 3: "Submit steps and photos" is No for admins). Checked
+  -- before the window so the failure is unambiguous, and before any row is touched.
+  if public.is_admin() then
+    raise exception 'Admin tidak mengirim jawaban';
+  end if;
+
   -- The window is read from the questions table, never from the caller.
   select * into v_question from public.questions q where q.id = p_question_id;
   if not found then
