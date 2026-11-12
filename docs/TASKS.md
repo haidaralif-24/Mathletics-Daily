@@ -5,7 +5,7 @@
 - [x] Migration 0001: tables, generated columns, RLS, grants
 - [x] `submit_answer`, `leaderboard`, `get_osn_date` functions + triggers (including `auth.users` insert -> `profiles` row, role = member)
 - [x] RLS test suite (see docs/SECURITY.md) — *7 files, 261 assertions, PASS on a clean database (`pnpm db:verify`). Mutation-tested: disabling RLS on `submissions` fails 7 of them*
-- [x] `scripts/seed.ts`: 2 admins, 5 dummy members, 3 sample questions with keys and mark schemes, a few submissions and grades — *runs green; `SEED_ONLY_ADMINS=1` for production. Run it yourself to get the one-time passwords*
+- [x] `scripts/seed.ts`: `SEED_PROFILE=demo|starter|admins` — *`starter` (one admin, one real question, no students) is what the repo ships with; `demo` gives 2 admins, 5 dummy members, 3 sample questions, submissions and grades; `admins` is production. `SEED_QUESTION_DATE` schedules the starter question*
 - [x] Login page (via the `signIn` server action), middleware, forced password change (`must_change_password` in `app_metadata`; `changePassword` clears it) — *proxy.ts (Next 16 renamed middleware) + `requireUser`/`requireAdmin`; `signIn` verified over the real auth HTTP endpoint*
 - [x] Admin: import members from CSV, temporary passwords shown once, reset password
 - [x] Admin: question editor (LaTeX toolbar, live preview, KaTeX parse check), key, mark scheme, image
@@ -17,11 +17,11 @@
 - [x] Answer the open items that block go-live (`docs/OPEN_ITEMS.md`) — *defaults applied, see docs/DECISIONS.md 23-35*
 
 ### Not verified before go-live (be honest about these)
-- [ ] Nothing was rendered in a real browser: no Playwright browser could be
-      downloaded in the build environment and no system Chrome exists. So the
-      360 px layout, dark mode appearance, the member submit form, the grading
-      screen and the leaderboard have **not** been seen rendered — only built,
-      typechecked and exercised through HTTP and SQL.
+- [x] Browser rendering: a Thorium run at 360 px and 1280 px covered the guest
+      page (light and dark), member login, the submit form, the leaderboard, and
+      all four admin screens, with zero console errors. Run against a production
+      build (`next start`) with the local database.
+- [ ] The 360 px layout has not been checked on a real phone or a real Safari.
 - [ ] Lighthouse mobile (Performance >= 85, Accessibility >= 90): not run.
 - [ ] "Grade 20 submissions in under 10 minutes": not timed.
 - [ ] Two-account isolation is proven in pgTAP at the SQL layer, never through

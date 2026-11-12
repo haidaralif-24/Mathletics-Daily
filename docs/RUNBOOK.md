@@ -1,5 +1,16 @@
 # Runbook
 
+## Current state (12 Nov 2026)
+- Code is deployable: typecheck, lint, unit tests and `pnpm build` all pass, and
+  the app renders correctly against a seeded local database.
+- **The hosted project `sqxqukrjpccphjixgyhr` is still empty** — no tables, no
+  buckets. `db push` (step 4) has never run, so a deploy pointing at it shows
+  "Gagal memuat soal hari ini" on every page. That is the one blocking step.
+- Vercel is not linked yet (`vercel link`), and the env vars in step 5 are unset.
+- `pnpm db:reset` / `db:test` need the Supabase CLI to write `~/.supabase`. In a
+  sandbox that denies it, use `docker exec supabase_db_mathletics-daily psql`
+  for direct SQL instead.
+
 ## Environments
 | Environment | Supabase project | Vercel |
 | --- | --- | --- |
@@ -43,33 +54,32 @@ Set up once per project (staging first, then production):
    production values:
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
    `SUPABASE_SERVICE_ROLE_KEY` (server only, never `NEXT_PUBLIC_`).
-6. **Staging only — load the demo data**:
+6. **Load data with the seed script** — `SEED_PROFILE` decides how much:
    ```bash
-   pnpm seed          # 2 admins, 5 dummy members, 3 questions with keys and mark schemes
+   # staging: one admin + one real question, no dummy students
+   SEED_PROFILE=starter SEED_ALLOW_REMOTE=1 pnpm seed
+   # production: admins only; write the real questions in the UI
+   SEED_PROFILE=admins SEED_ALLOW_REMOTE=1 pnpm seed
+   # local development: 5 dummy members, 3 questions, submissions and grades
+   SEED_PROFILE=demo pnpm seed
    ```
-   It prints every temporary password once. Never run this against production
-   with the dummy data.
-7. **Production — create just the 2 admins**:
-   ```bash
-   SEED_ONLY_ADMINS=1 SEED_ALLOW_REMOTE=1 pnpm seed
-   ```
-   `SEED_ONLY_ADMINS=1` skips the dummy members, sample questions and
-   submissions. `SEED_ALLOW_REMOTE=1` is the deliberate guard that lets the
-   script touch a non-local project. Both admins land with
-   `must_change_password`, so they are forced to set their own password at
-   first login.
-8. **Import the roster**: sign in as an admin, Kelola Member > Impor CSV
+   Admins are not forced to change the password set in `SEED_ADMIN_PASSWORD`
+   (the operator chose it); members always are. `SEED_QUESTION_DATE=YYYY-MM-DD`
+   schedules the starter question instead of releasing it immediately.
+7. **Import the roster**: sign in as an admin, Kelola Member > Impor CSV
    (`email, full name, class`). Temporary passwords are shown once and are
    downloadable as a CSV — hand them out in person or through the teacher.
    Malformed and duplicate rows are reported without aborting the import.
-9. **Schedule the first 7 questions**: as an admin, create one question per
+8. **Schedule the first 7 questions**: as an admin, create one question per
    WIB calendar date for the next 7 days, each with an answer key and a mark
    scheme. The dashboard warns about gaps ("Belum ada soal untuk besok"). A
    draft saved without a key still occupies its date and WILL be released —
    finish each one before its 04:00 WIB release.
-10. **Have both admins log in** and change their passwords, then confirm the
-    leaderboard is empty (admins never appear on it).
-11. **Smoke-test on a real phone** with one member account: log in with the
+   `SEED_PROFILE=starter` already creates the first one, open now, so start from
+   tomorrow.
+9. **Have both admins log in** and change their passwords, then confirm the
+   leaderboard is empty (admins never appear on it).
+10. **Smoke-test on a real phone** with one member account: log in with the
     temporary password, change it, submit a photo, confirm the final answer
     locks, and confirm the verdict is hidden until after close.
 

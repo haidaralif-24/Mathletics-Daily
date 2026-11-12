@@ -5,14 +5,21 @@
  *
  * Run against STAGING:  pnpm seed
  *
- * What it creates (docs/TASKS.md, SPEC A-2):
- *  - the admins named in SEED_ADMIN_EMAILS, with SEED_ADMIN_PASSWORD, forced to change it
- *  - 5 dummy members with random one-time temporary passwords
- *  - 3 questions (one closed, one open right now, one upcoming) with keys and mark schemes
- *  - a few submissions and grades, so the grading screen and leaderboard have data
+ * SEED_PROFILE picks how much data is created:
+ *  - `demo`    (default) admins, 5 dummy members, 3 questions, submissions and
+ *              grades — for local development and previews.
+ *  - `starter` admins plus ONE real question and no members — the shape of the
+ *              real app on launch day.
+ *  - `admins`  admins only. `SEED_ONLY_ADMINS=1` is kept as an alias.
  *
- * NEVER run this against production with dummy data. The guard below refuses a
- * non-local project unless SEED_ALLOW_REMOTE=1 is set on purpose.
+ * The admins are the addresses in SEED_ADMIN_EMAILS, with SEED_ADMIN_PASSWORD.
+ * They are NOT forced to change it: that password is chosen by the operator,
+ * not generated, so bouncing them to /ganti-sandi on the first login would be
+ * busywork. Members are always forced to change theirs.
+ *
+ * NEVER run `demo` against production: it contains fake students and fake
+ * submissions. The guard below refuses any non-local project unless
+ * SEED_ALLOW_REMOTE=1 is set on purpose.
  */
 import { randomBytes } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -84,16 +91,28 @@ async function ensureUser(
   user: SeedUser,
   password: string,
   role: 'member' | 'admin',
+  mustChangePassword = true,
 ): Promise<string> {
   const existing = await findUserByEmail(user.email);
 
   if (existing) {
     await admin.auth.admin.updateUserById(existing.id, {
       password,
-      app_metadata: { must_change_password: true, role },
+      app_metadata: { must_change_password: mustChangePassword, role },
       ban_duration: 'none',
     });
-    await admin.from('profiles').update({ role, display_name: user.displayName, class_name: user.className ?? null, active: true }).eq('id', existing.id);
+    // BOTH flags: proxy.ts reads app_metadata from the JWT, requireUser() reads
+    // this column. Setting only one sends the user to /ganti-sandi forever.
+    await admin
+      .from('profiles')
+      .update({
+        role,
+        display_name: user.displayName,
+        class_name: user.className ?? null,
+        active: true,
+        must_change_password: mustChangePassword,
+      })
+      .eq('id', existing.id);
     return existing.id;
   }
 
@@ -101,15 +120,21 @@ async function ensureUser(
     email: user.email,
     password,
     email_confirm: true, // no mail is ever delivered; the admin hands the password over
-    app_metadata: { must_change_password: true, role },
+    app_metadata: { must_change_password: mustChangePassword, role },
   });
   if (error) throw error;
 
   const id = data.user.id;
-  // The auth.users insert trigger already created the profile row with role = member.
+  // The auth.users insert trigger already created the profile row with
+  // role = member and must_change_password = true, so both are overridden here.
   await admin
     .from('profiles')
-    .update({ role, display_name: user.displayName, class_name: user.className ?? null })
+    .update({
+      role,
+      display_name: user.displayName,
+      class_name: user.className ?? null,
+      must_change_password: mustChangePassword,
+    })
     .eq('id', id);
 
   return id;
@@ -180,11 +205,63 @@ const MEMBERS: SeedUser[] = [
   { email: 'anggota5@mathletics.local', displayName: 'Elsa Maulida', className: 'XI-C' },
 ];
 
+/**
+ * The one question `starter` creates. A classic divisibility trick: subtract the
+ * denominator from the numerator so the unknown sits in a single fraction, then
+ * count the divisors of the remainder.
+ *
+ * Verified: (n+3)/(n-1) is an integer exactly for n = 2, 3, 5, so the answer is 10.
+ * Answer type stays `integer`, which is what v1 accepts (docs/OPEN_ITEMS.md).
+ */
+function starterQuestion(): SeedQuestion {
+  // SEED_QUESTION_DATE lets the launch question be scheduled instead of live now.
+  const releaseDate = process.env.SEED_QUESTION_DATE?.trim() || openWindowDate();
+
+  return {
+    releaseDate,
+    title: 'Pecahan yang bernilai bulat',
+    bodyLatex:
+      'Tentukan jumlah semua bilangan asli $n$ sehingga\n\n$$\\frac{n+3}{n-1}$$\n\nmerupakan bilangan bulat.',
+    topic: 'Teori Bilangan',
+    difficulty: 3,
+    acceptedAnswers: ['10'],
+    markScheme: [
+      {
+        position: 1,
+        descriptionMd:
+          'Menulis ulang pecahan sebagai $\\dfrac{n-1+4}{n-1} = 1 + \\dfrac{4}{n-1}$.',
+        points: 2,
+      },
+      {
+        position: 2,
+        descriptionMd:
+          'Menyimpulkan $\\dfrac{4}{n-1}$ bulat, jadi $n-1$ harus membagi $4$.',
+        points: 1,
+      },
+      {
+        position: 3,
+        descriptionMd:
+          'Mengambil pembagi positif $n-1 \\in \\{1,2,4\\}$, sehingga $n \\in \\{2,3,5\\}$.',
+        points: 1,
+      },
+      {
+        position: 4,
+        descriptionMd: 'Menjumlahkan: $2+3+5 = 10$.',
+        points: 1,
+      },
+    ],
+    solutionMd:
+      'Tulis $\\dfrac{n+3}{n-1} = \\dfrac{(n-1)+4}{n-1} = 1 + \\dfrac{4}{n-1}$. Karena $1$ bulat, pecahan itu bulat tepat ketika $\\dfrac{4}{n-1}$ bulat, yaitu ketika $n-1$ membagi $4$. Untuk $n$ bilangan asli, $n-1$ adalah pembagi positif $4$: $1, 2, 4$. Maka $n = 2, 3, 5$, dan jumlahnya $2+3+5 = 10$.',
+  };
+}
+
 /* ----------------------------------------------------------------- run */
-async function seedQuestions(): Promise<Map<string, { id: string; releaseAt: Date }>> {
+async function seedQuestions(
+  list: SeedQuestion[],
+): Promise<Map<string, { id: string; releaseAt: Date }>> {
   const byDate = new Map<string, { id: string; releaseAt: Date }>();
 
-  for (const q of QUESTIONS) {
+  for (const q of list) {
     const { data, error } = await admin
       .from('questions')
       .upsert(
@@ -299,6 +376,18 @@ async function seedSubmissions(questionId: string, releaseAt: Date, memberIds: s
   }
 }
 
+type SeedProfile = 'demo' | 'starter' | 'admins';
+
+/** SEED_PROFILE wins; SEED_ONLY_ADMINS=1 stays as the older alias for `admins`. */
+function resolveProfile(): SeedProfile {
+  const raw = (process.env.SEED_PROFILE ?? '').trim().toLowerCase();
+  if (raw === 'demo' || raw === 'starter' || raw === 'admins') return raw;
+  if (raw) {
+    throw new Error(`SEED_PROFILE "${raw}" tidak dikenal. Pilih demo, starter, atau admins.`);
+  }
+  return process.env.SEED_ONLY_ADMINS === '1' ? 'admins' : 'demo';
+}
+
 async function main() {
   const adminEmails = (process.env.SEED_ADMIN_EMAILS ?? '')
     .split(',')
@@ -310,42 +399,58 @@ async function main() {
     throw new Error('SEED_ADMIN_EMAILS dan SEED_ADMIN_PASSWORD wajib diisi (lihat .env.example).');
   }
 
-  // Production has no dummy members and no sample questions. Set
-  // SEED_ONLY_ADMINS=1 to create just the admin accounts and stop.
-  const onlyAdmins = process.env.SEED_ONLY_ADMINS === '1';
+  const profile = resolveProfile();
 
   const credentials: { email: string; password: string; role: 'admin' | 'member' }[] = [];
 
   for (const [i, email] of adminEmails.entries()) {
-    const id = await ensureUser({ email, displayName: `Admin ${i + 1}` }, adminPassword, 'admin');
+    // Not forced to change: this password was chosen by the operator, not generated.
+    const id = await ensureUser(
+      { email, displayName: `Admin ${i + 1}` },
+      adminPassword,
+      'admin',
+      false,
+    );
     credentials.push({ email, password: adminPassword, role: 'admin' });
     console.log(`admin  ${email} -> ${id}`);
   }
 
-  if (onlyAdmins) {
-    console.log('\nSEED_ONLY_ADMINS=1: anggota contoh dan soal contoh dilewati.');
-    console.log('\nKata sandi admin — tampil sekali, segera ganti saat login pertama:\n');
+  if (profile === 'admins') {
+    console.log('\nProfil `admins`: anggota contoh dan soal contoh dilewati.');
+    console.log('\nKata sandi admin:\n');
     for (const c of credentials) console.log(`  ${c.role.padEnd(6)} ${c.email.padEnd(34)} ${c.password}`);
     return;
   }
 
   const memberIds: string[] = [];
-  for (const member of MEMBERS) {
-    const password = tempPassword();
-    const id = await ensureUser(member, password, 'member');
-    memberIds.push(id);
-    credentials.push({ email: member.email, password, role: 'member' });
+  if (profile === 'demo') {
+    for (const member of MEMBERS) {
+      const password = tempPassword();
+      const id = await ensureUser(member, password, 'member');
+      memberIds.push(id);
+      credentials.push({ email: member.email, password, role: 'member' });
+    }
   }
 
-  const questions = await seedQuestions();
-  const closed = [...questions.values()].sort((a, b) => a.releaseAt.getTime() - b.releaseAt.getTime())[0];
-  if (closed) await seedSubmissions(closed.id, closed.releaseAt, memberIds);
+  const list = profile === 'demo' ? QUESTIONS : [starterQuestion()];
+  const questions = await seedQuestions(list);
 
-  console.log(`\n${QUESTIONS.length} soal, ${memberIds.length} anggota, ${adminEmails.length} admin.`);
+  if (profile === 'demo') {
+    const closed = [...questions.values()].sort((a, b) => a.releaseAt.getTime() - b.releaseAt.getTime())[0];
+    if (closed) await seedSubmissions(closed.id, closed.releaseAt, memberIds);
+  }
+
+  console.log(
+    `\n${list.length} soal, ${memberIds.length} anggota, ${adminEmails.length} admin (profil \`${profile}\`).`,
+  );
+  if (profile === 'starter') {
+    const only = [...questions.entries()][0];
+    console.log(`Soal "${list[0].title}" terbit ${only?.[0]} pukul 04.00 WIB, tutup 24 jam kemudian.`);
+  }
   console.log('\nKata sandi sementara — tampil sekali, catat sekarang:\n');
   for (const c of credentials) console.log(`  ${c.role.padEnd(6)} ${c.email.padEnd(34)} ${c.password}`);
   console.log(`\nPoin maksimum per soal: ${SCORING.base + SCORING.speedMax + SCORING.stepsMax}.`);
-  console.log('Semua akun wajib ganti kata sandi saat login pertama.');
+  if (memberIds.length > 0) console.log('Semua anggota wajib ganti kata sandi saat login pertama.');
 }
 
 main().catch((error: unknown) => {
