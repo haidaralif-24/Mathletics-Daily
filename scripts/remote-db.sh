@@ -73,7 +73,9 @@ case "${1:-push}" in
   push)
     need node
     echo "Applying migrations to $(masked_url)"
-    pnpm dlx supabase db push --db-url "$DB_URL"
+    # --remote replaces the deprecated --db-url in CLI v3; --yes because a
+    # scripted run has no TTY to answer the confirmation prompt.
+    pnpm dlx supabase db push --remote "$DB_URL" --yes
     echo
     echo "Done. Next:"
     echo "  DBPW='...' $0 check"

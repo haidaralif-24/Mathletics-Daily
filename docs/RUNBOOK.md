@@ -1,12 +1,19 @@
 # Runbook
 
-## Current state (12 Nov 2026)
-- Code is deployable: typecheck, lint, unit tests and `pnpm build` all pass, and
-  the app renders correctly against a seeded local database.
-- **The hosted project `sqxqukrjpccphjixgyhr` is still empty** — no tables, no
-  buckets. `db push` (step 4) has never run, so a deploy pointing at it shows
-  "Gagal memuat soal hari ini" on every page. That is the one blocking step.
-- Vercel is not linked yet (`vercel link`), and the env vars in step 5 are unset.
+## Current state (13 Nov 2026)
+- Code is deployable: typecheck, lint, unit tests and `pnpm build` all pass.
+- **Hosted project `sqxqukrjpccphjixgyhr` is provisioned**: `0001_init.sql` applied
+  through `scripts/remote-db.sh push`, both storage buckets created, and
+  `SEED_PROFILE=starter` ran against it. It holds one admin
+  (`admin@mathletics.com`) and one question, open 13 Nov 04.00 to 14 Nov 04.00 WIB.
+  Verified end to end against that project: guest page renders the question,
+  KaTeX renders, admin logs in and reaches every admin screen, `anon` reads the
+  question but gets 42501 on `question_keys`.
+- **Vercel is still the missing piece**: not linked (`vercel link`), and the three
+  env vars from step 5 are unset. Nothing else blocks a deploy.
+- The database is only reachable over IPv4 through the session-mode pooler;
+  `db.<ref>.supabase.co` is IPv6-only. `scripts/remote-db.sh` defaults to the
+  pooler, so no flags are needed.
 - `pnpm db:reset` / `db:test` need the Supabase CLI to write `~/.supabase`. In a
   sandbox that denies it, use `docker exec supabase_db_mathletics-daily psql`
   for direct SQL instead.
